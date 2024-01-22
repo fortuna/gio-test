@@ -88,9 +88,6 @@ func main() {
 							return resultLabel.Layout(gtx)
 						}),
 					)
-					// Draw the label to the graphics context.
-					title.Layout(gtx)
-
 					// Pass the drawing operations to the GPU.
 					e.Frame(gtx.Ops)
 				}
