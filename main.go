@@ -17,7 +17,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"image/color"
 	"log"
 	"net"
 	"os"
@@ -46,8 +45,9 @@ func main() {
 			appBar := component.NewAppBar(modal)
 			appBar.Title = "Domain Lookup"
 
-			var domainInput widget.Editor
-			domainInput.SingleLine = true
+			var domainInput component.TextField
+			domainInput.Helper = "Helper"
+			domainInput.Editor.SingleLine = true
 			var lookupButton widget.Clickable
 			var aResult, aaaaResult, cnameResult string
 
@@ -93,18 +93,7 @@ func main() {
 							return layout.UniformInset(unit.Dp(8)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 								return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-										label := material.Body1(th, "Domain")
-										label.Font.Weight = font.Bold
-										return label.Layout(gtx)
-									}),
-									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-										return widget.Border{
-											Color:        color.NRGBA{R: 204, G: 204, B: 204, A: 255},
-											CornerRadius: unit.Dp(3),
-											Width:        unit.Dp(2),
-										}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-											return layout.UniformInset(unit.Dp(4)).Layout(gtx, material.Editor(th, &domainInput, "Enter domain").Layout)
-										})
+										return domainInput.Layout(gtx, th, "Domain name")
 									}),
 									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 										return layout.Flex{Axis: layout.Horizontal, Spacing: layout.SpaceStart}.Layout(gtx,
