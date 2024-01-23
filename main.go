@@ -17,9 +17,11 @@ package main
 import (
 	"context"
 	"fmt"
+	"image/color"
 	"log"
 	"net"
 	"os"
+	"strings"
 
 	"gioui.org/app"
 	"gioui.org/font"
@@ -35,7 +37,7 @@ import (
 func main() {
 	go func() {
 		err := func() error {
-			w := app.NewWindow(app.Title("Domain Lookup"), app.Size(400, 300))
+			w := app.NewWindow(app.Title("Domain Lookup"), app.Size(500, 400))
 
 			var ops op.Ops
 			th := material.NewTheme()
@@ -45,6 +47,7 @@ func main() {
 			appBar.Title = "Domain Lookup"
 
 			var domainInput widget.Editor
+			domainInput.SingleLine = true
 			var lookupButton widget.Clickable
 			var aResult, aaaaResult, cnameResult string
 
@@ -60,7 +63,7 @@ func main() {
 					gtx := layout.NewContext(&ops, e)
 
 					for lookupButton.Clicked(gtx) {
-						domain := domainInput.Text()
+						domain := strings.TrimSpace(domainInput.Text())
 						ips, err := net.DefaultResolver.LookupIP(context.Background(), "ip4", domain)
 						if err != nil {
 							aResult = "❌ " + err.Error()
@@ -95,7 +98,13 @@ func main() {
 										return label.Layout(gtx)
 									}),
 									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-										return material.Editor(th, &domainInput, "Enter domain").Layout(gtx)
+										return widget.Border{
+											Color:        color.NRGBA{R: 204, G: 204, B: 204, A: 255},
+											CornerRadius: unit.Dp(3),
+											Width:        unit.Dp(2),
+										}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+											return layout.UniformInset(unit.Dp(4)).Layout(gtx, material.Editor(th, &domainInput, "Enter domain").Layout)
+										})
 									}),
 									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 										return layout.Flex{Axis: layout.Horizontal, Spacing: layout.SpaceStart}.Layout(gtx,
