@@ -1,6 +1,6 @@
 module github.com/fortuna/gio-test
 
-go 1.21.1
+go 1.20
 
 require gioui.org v0.4.2
 
