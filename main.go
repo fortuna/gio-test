@@ -48,11 +48,10 @@ func main() {
 			var domainInput component.TextField
 			domainInput.Helper = "Helper"
 			domainInput.Editor.SingleLine = true
+			domainInput.Editor.Submit = true
 			var lookupButton widget.Clickable
 			var aResult, aaaaResult, cnameResult string
 
-			// Header.
-			// title := material.H3(th, "Domain Lookup")
 			for {
 				switch e := w.NextEvent().(type) {
 				case system.DestroyEvent:
@@ -87,24 +86,21 @@ func main() {
 					layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							return appBar.Layout(gtx, th, "", "")
-							// return title.Layout(gtx)
 						}),
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							return layout.UniformInset(unit.Dp(8)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 								return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-										return domainInput.Layout(gtx, th, "Domain name")
-									}),
-									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-										return layout.Flex{Axis: layout.Horizontal, Spacing: layout.SpaceStart}.Layout(gtx,
+										return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Baseline}.Layout(gtx,
+											layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+												return domainInput.Layout(gtx, th, "")
+											}),
 											layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 												return material.Button(th, &lookupButton, "Lookup").Layout(gtx)
 											}),
 										)
 									}),
-									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-										return component.Divider(th).Layout(gtx)
-									}),
+									layout.Rigid(component.Divider(th).Layout),
 									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 										label := material.Body1(th, "A")
 										label.Font.Weight = font.Bold
