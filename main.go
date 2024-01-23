@@ -15,6 +15,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net"
@@ -25,8 +26,10 @@ import (
 	"gioui.org/io/system"
 	"gioui.org/layout"
 	"gioui.org/op"
+	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
+	"gioui.org/x/component"
 )
 
 func main() {
@@ -36,56 +39,106 @@ func main() {
 
 			var ops op.Ops
 			th := material.NewTheme()
+
+			modal := component.NewModal()
+			appBar := component.NewAppBar(modal)
+			appBar.Title = "Domain Lookup"
+
 			var domainInput widget.Editor
 			var lookupButton widget.Clickable
-			var resultLabel = material.Body1(th, "")
-			resultLabel.Font.Typeface = "monospace"
+			var aResult, aaaaResult, cnameResult string
 
 			// Header.
-			title := material.H3(th, "Domain Lookup")
+			// title := material.H3(th, "Domain Lookup")
 			for {
 				switch e := w.NextEvent().(type) {
 				case system.DestroyEvent:
 					return e.Err
+
 				case system.FrameEvent:
 					// This graphics context is used for managing the rendering state.
 					gtx := layout.NewContext(&ops, e)
 
 					for lookupButton.Clicked(gtx) {
-						ips, err := net.LookupIP(domainInput.Text())
+						domain := domainInput.Text()
+						ips, err := net.DefaultResolver.LookupIP(context.Background(), "ip4", domain)
 						if err != nil {
-							resultLabel.Text = "❌ " + err.Error()
+							aResult = "❌ " + err.Error()
 						} else {
-							resultLabel.Text = fmt.Sprint(ips)
+							aResult = fmt.Sprint(ips)
+						}
+						ips, err = net.DefaultResolver.LookupIP(context.Background(), "ip6", domain)
+						if err != nil {
+							aaaaResult = "❌ " + err.Error()
+						} else {
+							aaaaResult = fmt.Sprint(ips)
+						}
+						cname, err := net.DefaultResolver.LookupCNAME(context.Background(), domain)
+						if err != nil {
+							cnameResult = "❌ " + err.Error()
+						} else {
+							cnameResult = cname
 						}
 					}
 
 					layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							return title.Layout(gtx)
+							return appBar.Layout(gtx, th, "", "")
+							// return title.Layout(gtx)
 						}),
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							label := material.Body1(th, "Domain")
-							label.Font.Weight = font.Bold
-							return label.Layout(gtx)
-						}),
-						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							return material.Editor(th, &domainInput, "Enter domain").Layout(gtx)
-						}),
-						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							return layout.Flex{Axis: layout.Horizontal, Spacing: layout.SpaceStart}.Layout(gtx,
-								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-									return material.Button(th, &lookupButton, "Lookup").Layout(gtx)
-								}),
-							)
-						}),
-						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							label := material.Body1(th, "Result")
-							label.Font.Weight = font.Bold
-							return label.Layout(gtx)
-						}),
-						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							return resultLabel.Layout(gtx)
+							return layout.UniformInset(unit.Dp(8)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+								return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+										label := material.Body1(th, "Domain")
+										label.Font.Weight = font.Bold
+										return label.Layout(gtx)
+									}),
+									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+										return material.Editor(th, &domainInput, "Enter domain").Layout(gtx)
+									}),
+									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+										return layout.Flex{Axis: layout.Horizontal, Spacing: layout.SpaceStart}.Layout(gtx,
+											layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+												return material.Button(th, &lookupButton, "Lookup").Layout(gtx)
+											}),
+										)
+									}),
+									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+										return component.Divider(th).Layout(gtx)
+									}),
+									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+										label := material.Body1(th, "A")
+										label.Font.Weight = font.Bold
+										return label.Layout(gtx)
+									}),
+									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+										var resultLabel = material.Body1(th, aResult)
+										resultLabel.Font.Typeface = "monospace"
+										return resultLabel.Layout(gtx)
+									}),
+									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+										label := material.Body1(th, "AAAA")
+										label.Font.Weight = font.Bold
+										return label.Layout(gtx)
+									}),
+									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+										var resultLabel = material.Body1(th, aaaaResult)
+										resultLabel.Font.Typeface = "monospace"
+										return resultLabel.Layout(gtx)
+									}),
+									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+										label := material.Body1(th, "CNAME")
+										label.Font.Weight = font.Bold
+										return label.Layout(gtx)
+									}),
+									layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+										var resultLabel = material.Body1(th, cnameResult)
+										resultLabel.Font.Typeface = "monospace"
+										return resultLabel.Layout(gtx)
+									}),
+								)
+							})
 						}),
 					)
 					// Pass the drawing operations to the GPU.
