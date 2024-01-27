@@ -105,6 +105,7 @@ func main() {
 											layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 												return domainInput.Layout(gtx, th, "")
 											}),
+											layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
 											layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 												return material.Button(th, &lookupButton, "Lookup").Layout(gtx)
 											}),
