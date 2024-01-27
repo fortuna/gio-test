@@ -61,7 +61,17 @@ func main() {
 					// This graphics context is used for managing the rendering state.
 					gtx := layout.NewContext(&ops, e)
 
+					submitted := false
+					for _, e := range domainInput.Events() {
+						if _, ok := e.(widget.SubmitEvent); ok {
+							submitted = true
+						}
+					}
 					for lookupButton.Clicked(gtx) {
+						submitted = true
+					}
+
+					if submitted {
 						domain := strings.TrimSpace(domainInput.Text())
 						ips, err := net.DefaultResolver.LookupIP(context.Background(), "ip4", domain)
 						if err != nil {
