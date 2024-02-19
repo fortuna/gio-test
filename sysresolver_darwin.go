@@ -19,21 +19,10 @@ package main
 /*
 #include <stdlib.h>
 #include <dns_sd.h>
-// For printf.
-#include <stdio.h>
 
-extern void goCallback(DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t interfaceIndex,
+extern void goDNSServiceQueryRecordReply(DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t interfaceIndex,
 	DNSServiceErrorType errorCode, char* fullname, uint16_t rrtype, uint16_t rrclass,
 	uint16_t rdlen, void* rdata, uint32_t ttl, void* context);
-
-DNSServiceErrorType queryDNS(DNSServiceRef *sdRef, DNSServiceFlags flags, uint32_t interfaceIndex,
-	const char *fullname, uint16_t rrtype, uint16_t rrclass,
-	void *context) {
-	printf("queryDNS\n");
-	// Use cast to bypass const type mismatches.
-    return DNSServiceQueryRecord(sdRef, flags, interfaceIndex, fullname, rrtype, rrclass,
-	(DNSServiceQueryRecordReply)goCallback, context);
-}
 */
 import "C"
 
@@ -52,6 +41,26 @@ type queryCallbackFunc func(flags C.DNSServiceFlags, interfaceIndex int,
 	errorCode C.DNSServiceErrorType, fullname string,
 	rrtype dnsmessage.Type, rrclass dnsmessage.Class,
 	rdata []byte, ttl uint32)
+
+//export goDNSServiceQueryRecordReply
+func goDNSServiceQueryRecordReply(sdRef C.DNSServiceRef, flags C.DNSServiceFlags, interfaceIndex C.uint32_t,
+	errorCode C.DNSServiceErrorType, fullname *C.char, rrtype C.uint16_t, rrclass C.uint16_t,
+	rdlen C.uint16_t, rdata unsafe.Pointer, ttl C.uint32_t, context unsafe.Pointer) {
+	fmt.Println("goCallback", errorCode)
+	h := *(*cgo.Handle)(context)
+	doneFunc := h.Value().(queryCallbackFunc)
+
+	var goFullname string
+	var goRData []byte
+	if errorCode == 0 {
+		goFullname = C.GoString(fullname)
+		goRData = C.GoBytes(rdata, C.int(rdlen))
+	}
+	goRRType := dnsmessage.Type(rrtype)
+	goRRClass := dnsmessage.Class(rrclass)
+
+	doneFunc(flags, int(interfaceIndex), errorCode, goFullname, goRRType, goRRClass, goRData, uint32(ttl))
+}
 
 func queryCNAME(ctx context.Context, qname string) (string, error) {
 	defer fmt.Println("cname returned")
@@ -75,11 +84,12 @@ func queryCNAME(ctx context.Context, qname string) (string, error) {
 	defer cContext.Delete()
 	fmt.Println("starting")
 	// See https://developer.apple.com/documentation/dnssd/1804747-dnsservicequeryrecord?language=objc
-	serviceErr := C.queryDNS(&sdRef, 0, 0,
+	serviceErr := C.DNSServiceQueryRecord(&sdRef, 0, 0,
 		cQname, C.uint16_t(dnsmessage.TypeCNAME), C.uint16_t(dnsmessage.ClassINET),
+		C.DNSServiceQueryRecordReply(C.goDNSServiceQueryRecordReply),
 		unsafe.Pointer(&cContext))
 	fmt.Println("queryDNS serviceErr:", serviceErr)
-	if serviceErr != 0 {
+	if serviceErr != C.kDNSServiceErr_NoError {
 		return "", fmt.Errorf("failed to start DNS query: %v", serviceErr)
 	}
 	defer C.DNSServiceRefDeallocate(sdRef)
@@ -113,7 +123,7 @@ func queryCNAME(ctx context.Context, qname string) (string, error) {
 		// See https://developer.apple.com/documentation/dnssd/1804696-dnsserviceprocessresult?language=objc.
 		fmt.Println("DNSServiceProcessResult")
 		serviceErr = C.DNSServiceProcessResult(sdRef)
-		if serviceErr != 0 {
+		if serviceErr != C.kDNSServiceErr_NoError {
 			return "", fmt.Errorf("failed to process DNS response: %v", serviceErr)
 		}
 	}
