@@ -85,7 +85,7 @@ func main() {
 						} else {
 							aaaaResult = fmt.Sprint(ips)
 						}
-						cname, err := net.DefaultResolver.LookupCNAME(context.Background(), domain)
+						cname, err := queryCNAME(context.Background(), domain)
 						if err != nil {
 							cnameResult = "❌ " + err.Error()
 						} else {
