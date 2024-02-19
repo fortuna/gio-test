@@ -76,7 +76,7 @@ func queryCNAME(ctx context.Context, qname string) (string, error) {
 	fmt.Println("starting")
 	// See https://developer.apple.com/documentation/dnssd/1804747-dnsservicequeryrecord?language=objc
 	serviceErr := C.queryDNS(&sdRef, 0, 0,
-		cQname, C.uint16_t(dnsmessage.TypeA), C.uint16_t(dnsmessage.ClassINET),
+		cQname, C.uint16_t(dnsmessage.TypeCNAME), C.uint16_t(dnsmessage.ClassINET),
 		unsafe.Pointer(&cContext))
 	fmt.Println("queryDNS serviceErr:", serviceErr)
 	if serviceErr != 0 {
