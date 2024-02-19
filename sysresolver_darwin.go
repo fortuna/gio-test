@@ -19,27 +19,20 @@ package main
 /*
 #include <stdlib.h>
 #include <dns_sd.h>
+// For printf.
 #include <stdio.h>
 
 extern void goCallback(DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t interfaceIndex,
 	DNSServiceErrorType errorCode, char* fullname, uint16_t rrtype, uint16_t rrclass,
 	uint16_t rdlen, void* rdata, uint32_t ttl, void* context);
 
-void cCallback(DNSServiceRef sdRef, DNSServiceFlags flags, uint32_t interfaceIndex,
-	DNSServiceErrorType errorCode, const char *fullname, uint16_t rrtype, uint16_t rrclass,
-	uint16_t rdlen, const void *rdata, uint32_t ttl, void *context) {
-	printf("cCallback\n");
-    goCallback(sdRef, flags, interfaceIndex, errorCode, (char*)fullname, rrtype, rrclass,
-		rdlen, (void*)rdata, ttl, context);
-}
-
 DNSServiceErrorType queryDNS(DNSServiceRef *sdRef, DNSServiceFlags flags, uint32_t interfaceIndex,
 	const char *fullname, uint16_t rrtype, uint16_t rrclass,
 	void *context) {
 	printf("queryDNS\n");
+	// Use cast to bypass const type mismatches.
     return DNSServiceQueryRecord(sdRef, flags, interfaceIndex, fullname, rrtype, rrclass,
-	cCallback, context);
-	// (DNSServiceQueryRecordReply)goCallback, context);
+	(DNSServiceQueryRecordReply)goCallback, context);
 }
 */
 import "C"
