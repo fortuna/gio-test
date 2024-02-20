@@ -108,18 +108,42 @@ func queryCNAME(ctx context.Context, qname string) (string, error) {
 			return answer, nil
 		default:
 		}
-		timeout := int(-1)
-		if deadline, ok := ctx.Deadline(); ok {
-			timeout = int(time.Until(deadline).Milliseconds())
-		}
+
+		/*
+			fmt.Println("Select")
+			var selectTimeout *unix.Timeval
+			if deadline, ok := ctx.Deadline(); ok {
+				timeout := time.Until(deadline)
+				selectTimeout = &unix.Timeval{
+					Sec:  timeout.Milliseconds() / 1000,
+					Usec: int32(timeout.Milliseconds() % 1000 * 1000),
+				}
+			}
+			var fds unix.FdSet
+			fds.Set(int(fd))
+			nReady, err := unix.Select(int(fd+1), &fds, nil, &fds, selectTimeout)
+			if err != nil {
+				return "", err
+			}
+			if nReady == 0 {
+				return "", context.DeadlineExceeded
+			}
+		*/
+
 		fmt.Println("Poll")
-		nReady, err := unix.Poll([]unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN | unix.POLLERR | unix.POLLHUP}}, timeout)
+		pollTimeout := int(-1)
+		if deadline, ok := ctx.Deadline(); ok {
+			timeout := time.Until(deadline)
+			pollTimeout = int(timeout.Milliseconds())
+		}
+		nReady, err := unix.Poll([]unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN | unix.POLLERR | unix.POLLHUP}}, pollTimeout)
 		if err != nil {
 			return "", err
 		}
 		if nReady == 0 {
 			return "", context.DeadlineExceeded
 		}
+
 		// See https://developer.apple.com/documentation/dnssd/1804696-dnsserviceprocessresult?language=objc.
 		fmt.Println("DNSServiceProcessResult")
 		serviceErr = C.DNSServiceProcessResult(sdRef)
