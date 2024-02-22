@@ -18,7 +18,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"net"
 	"os"
 	"strings"
 
@@ -31,6 +30,8 @@ import (
 	"gioui.org/widget"
 	"gioui.org/widget/material"
 	"gioui.org/x/component"
+	"github.com/fortuna/gio-test/sysresolver"
+	"golang.org/x/net/dns/dnsmessage"
 )
 
 func main() {
@@ -73,19 +74,19 @@ func main() {
 
 					if submitted {
 						domain := strings.TrimSpace(domainInput.Text())
-						ips, err := net.DefaultResolver.LookupIP(context.Background(), "ip4", domain)
+						ips, err := sysresolver.Query(context.Background(), domain, dnsmessage.TypeA)
 						if err != nil {
 							aResult = "❌ " + err.Error()
 						} else {
 							aResult = fmt.Sprint(ips)
 						}
-						ips, err = net.DefaultResolver.LookupIP(context.Background(), "ip6", domain)
+						ips, err = sysresolver.query(context.Background(), domain, dnsmessage.TypeAAAA)
 						if err != nil {
 							aaaaResult = "❌ " + err.Error()
 						} else {
 							aaaaResult = fmt.Sprint(ips)
 						}
-						cname, err := queryCNAME(context.Background(), domain)
+						cname, err := sysresolver.query(context.Background(), domain, dnsmessage.TypeCNAME)
 						if err != nil {
 							cnameResult = "❌ " + err.Error()
 						} else {

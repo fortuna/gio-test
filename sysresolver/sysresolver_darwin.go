@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build darwin
+//go:build darwin && dnssd
 
-package main
+package sysresolver
 
 /*
 #include <stdlib.h>
@@ -29,6 +29,7 @@ import "C"
 import (
 	"context"
 	"fmt"
+	"log"
 	"runtime/cgo"
 	"time"
 	"unsafe"
@@ -36,6 +37,11 @@ import (
 	"golang.org/x/net/dns/dnsmessage"
 	"golang.org/x/sys/unix"
 )
+
+func Query(ctx context.Context, qname string, qtype dnsmessage.Type) (string, error) {
+	msg, err := queryAnswers(ctx, qname, qtype)
+	return formatMessage(msg), err
+}
 
 type queryCallbackFunc func(flags C.DNSServiceFlags, interfaceIndex int,
 	errorCode C.DNSServiceErrorType, fullname string,
@@ -46,7 +52,6 @@ type queryCallbackFunc func(flags C.DNSServiceFlags, interfaceIndex int,
 func goDNSServiceQueryRecordReply(sdRef C.DNSServiceRef, flags C.DNSServiceFlags, interfaceIndex C.uint32_t,
 	errorCode C.DNSServiceErrorType, fullname *C.char, rrtype C.uint16_t, rrclass C.uint16_t,
 	rdlen C.uint16_t, rdata unsafe.Pointer, ttl C.uint32_t, context unsafe.Pointer) {
-	fmt.Println("goCallback", errorCode)
 	h := *(*cgo.Handle)(context)
 	doneFunc := h.Value().(queryCallbackFunc)
 
@@ -62,13 +67,23 @@ func goDNSServiceQueryRecordReply(sdRef C.DNSServiceRef, flags C.DNSServiceFlags
 	doneFunc(flags, int(interfaceIndex), errorCode, goFullname, goRRType, goRRClass, goRData, uint32(ttl))
 }
 
-func queryCNAME(ctx context.Context, qname string) (string, error) {
-	defer fmt.Println("cname returned")
+// Uses dns_sd. It leverages the system cache. When a CNAME chain is cached, it doesn't always return the
+// A/AAAA records immediately.
+// See https://opensource.apple.com/source/mDNSResponder/mDNSResponder-878.70.2/mDNSShared/dns_sd.h.auto.html
+func queryAnswers(ctx context.Context, qname string, qtype dnsmessage.Type) (*dnsmessage.Message, error) {
+	defer log.Println("queryAnswers returned")
 	var sdRef C.DNSServiceRef
+	var response dnsmessage.Message
+	response.Header.Response = true
+	parsedQname, err := dnsmessage.NewName(qname)
+	if err != nil {
+		return nil, err
+	}
+	response.Questions = []dnsmessage.Question{{Name: parsedQname, Type: qtype, Class: dnsmessage.ClassINET}}
 
 	cQname := C.CString(qname)
 	defer C.free(unsafe.Pointer(cQname))
-	var answer string
+	answers := make([]dnsmessage.Resource, 0, 1)
 	done := make(chan struct{}, 1)
 	var callback queryCallbackFunc = func(flags C.DNSServiceFlags, interfaceIndex int,
 		errorCode C.DNSServiceErrorType, fullname string,
@@ -77,60 +92,98 @@ func queryCNAME(ctx context.Context, qname string) (string, error) {
 		if flags&C.kDNSServiceFlagsMoreComing != C.kDNSServiceFlagsMoreComing {
 			defer func() { done <- struct{}{} }()
 		}
-		answer += fmt.Sprintln(flags, interfaceIndex, errorCode, fullname, rrtype, rrclass, rdata, ttl)
-		fmt.Println("Answer:", answer)
+		if errorCode != C.kDNSServiceErr_NoError {
+			switch errorCode {
+			case C.kDNSServiceErr_NoSuchRecord:
+				log.Println("No such record (NOERROR, no answers)")
+			case C.kDNSServiceErr_NoSuchName:
+				response.RCode = dnsmessage.RCodeNameError
+				log.Println("NXDOMAIN")
+
+			default:
+				log.Println("errorCode:", errorCode)
+			}
+			return
+		}
+		parsedName, err := dnsmessage.NewName(fullname)
+		if err != nil {
+			return
+		}
+		resource := dnsmessage.Resource{
+			Header: dnsmessage.ResourceHeader{
+				Name:  parsedName,
+				Type:  dnsmessage.Type(rrtype),
+				Class: dnsmessage.Class(rrclass),
+				TTL:   ttl,
+			},
+			Body: &dnsmessage.UnknownResource{Type: dnsmessage.Type(rrtype), Data: rdata},
+		}
+		switch rrtype {
+		case dnsmessage.TypeA:
+			if len(rdata) == 4 {
+				resource.Body = &dnsmessage.AResource{A: [4]byte(rdata)}
+			}
+		case dnsmessage.TypeAAAA:
+			if len(rdata) == 16 {
+				resource.Body = &dnsmessage.AAAAResource{AAAA: [16]byte(rdata)}
+			}
+		case dnsmessage.TypeCNAME:
+			var cname string
+			for remaining := rdata; len(remaining) > 0; {
+				prefixLen := int(remaining[0])
+				if prefixLen == 0 {
+					break
+				}
+				if 1+prefixLen > len(rdata) {
+					prefixLen = len(rdata) - 1
+				}
+				prefix := remaining[1 : prefixLen+1]
+				cname += string(prefix) + "."
+				remaining = remaining[prefixLen+1:]
+			}
+			name, err := dnsmessage.NewName(cname)
+			if err == nil {
+				resource.Body = &dnsmessage.CNAMEResource{CNAME: name}
+			}
+		default:
+			resource.Body = &dnsmessage.UnknownResource{Type: rrtype, Data: rdata}
+		}
+		log.Println("Answer:", flags, interfaceIndex, errorCode, resource.GoString())
+
+		answers = append(answers, resource)
+		response.Answers = append(response.Answers, resource)
 	}
 	cContext := cgo.NewHandle(callback)
 	defer cContext.Delete()
-	fmt.Println("starting")
+	log.Println("starting")
 	// See https://developer.apple.com/documentation/dnssd/1804747-dnsservicequeryrecord?language=objc
-	serviceErr := C.DNSServiceQueryRecord(&sdRef, 0, 0,
-		cQname, C.uint16_t(dnsmessage.TypeCNAME), C.uint16_t(dnsmessage.ClassINET),
+	var flags C.DNSServiceFlags = C.kDNSServiceFlagsReturnIntermediates
+	serviceErr := C.DNSServiceQueryRecord(&sdRef, flags, 0,
+		cQname, C.uint16_t(qtype), C.uint16_t(dnsmessage.ClassINET),
 		C.DNSServiceQueryRecordReply(C.goDNSServiceQueryRecordReply),
 		unsafe.Pointer(&cContext))
-	fmt.Println("queryDNS serviceErr:", serviceErr)
+	log.Println("queryDNS serviceErr:", serviceErr)
 	if serviceErr != C.kDNSServiceErr_NoError {
-		return "", fmt.Errorf("failed to start DNS query: %v", serviceErr)
+		return nil, fmt.Errorf("failed to start DNS query: %v", serviceErr)
 	}
 	defer C.DNSServiceRefDeallocate(sdRef)
 
 	// See https://developer.apple.com/documentation/dnssd/1804698-dnsservicerefsockfd
 	fd := C.DNSServiceRefSockFD(sdRef)
 	if fd < 0 {
-		return "", fmt.Errorf("failed to get DNSServiceRef file descriptor")
+		return nil, fmt.Errorf("failed to get DNSServiceRef file descriptor")
 	}
-	fmt.Println("For loop, fd:", fd)
+	log.Println("For loop, fd:", fd)
 	for {
 		select {
 		case <-ctx.Done():
-			return "", ctx.Err()
+			return nil, ctx.Err()
 		case <-done:
-			return answer, nil
+			return &response, nil
 		default:
 		}
 
-		/*
-			fmt.Println("Select")
-			var selectTimeout *unix.Timeval
-			if deadline, ok := ctx.Deadline(); ok {
-				timeout := time.Until(deadline)
-				selectTimeout = &unix.Timeval{
-					Sec:  timeout.Milliseconds() / 1000,
-					Usec: int32(timeout.Milliseconds() % 1000 * 1000),
-				}
-			}
-			var fds unix.FdSet
-			fds.Set(int(fd))
-			nReady, err := unix.Select(int(fd+1), &fds, nil, &fds, selectTimeout)
-			if err != nil {
-				return "", err
-			}
-			if nReady == 0 {
-				return "", context.DeadlineExceeded
-			}
-		*/
-
-		fmt.Println("Poll")
+		log.Println("Poll")
 		pollTimeout := int(-1)
 		if deadline, ok := ctx.Deadline(); ok {
 			timeout := time.Until(deadline)
@@ -138,25 +191,17 @@ func queryCNAME(ctx context.Context, qname string) (string, error) {
 		}
 		nReady, err := unix.Poll([]unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN | unix.POLLERR | unix.POLLHUP}}, pollTimeout)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 		if nReady == 0 {
-			return "", context.DeadlineExceeded
+			return nil, context.DeadlineExceeded
 		}
 
 		// See https://developer.apple.com/documentation/dnssd/1804696-dnsserviceprocessresult?language=objc.
-		fmt.Println("DNSServiceProcessResult")
+		log.Println("DNSServiceProcessResult")
 		serviceErr = C.DNSServiceProcessResult(sdRef)
 		if serviceErr != C.kDNSServiceErr_NoError {
-			return "", fmt.Errorf("failed to process DNS response: %v", serviceErr)
+			return nil, fmt.Errorf("failed to process DNS response: %v", serviceErr)
 		}
 	}
-
-	// answer = answer[:n]
-	// var msg dnsmessage.Message
-	// err := msg.Unpack(answer)
-	// if err != nil {
-	// 	return "", err
-	// }
-	// return msg.GoString(), nil
 }
