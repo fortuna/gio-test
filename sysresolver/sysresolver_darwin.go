@@ -67,8 +67,7 @@ func goDNSServiceQueryRecordReply(sdRef C.DNSServiceRef, flags C.DNSServiceFlags
 	doneFunc(flags, int(interfaceIndex), errorCode, goFullname, goRRType, goRRClass, goRData, uint32(ttl))
 }
 
-// Uses dns_sd. It leverages the system cache. When a CNAME chain is cached, it doesn't always return the
-// A/AAAA records immediately.
+// Uses dns_sd. It leverages the system cache.
 // See https://opensource.apple.com/source/mDNSResponder/mDNSResponder-878.70.2/mDNSShared/dns_sd.h.auto.html
 func queryAnswers(ctx context.Context, qname string, qtype dnsmessage.Type) (*dnsmessage.Message, error) {
 	defer log.Println("queryAnswers returned")
@@ -89,7 +88,15 @@ func queryAnswers(ctx context.Context, qname string, qtype dnsmessage.Type) (*dn
 		errorCode C.DNSServiceErrorType, fullname string,
 		rrtype dnsmessage.Type, rrclass dnsmessage.Class,
 		rdata []byte, ttl uint32) {
-		if flags&C.kDNSServiceFlagsMoreComing != C.kDNSServiceFlagsMoreComing {
+		// See https://developer.apple.com/documentation/dnssd/1823436-anonymous/kdnsserviceflagsmorecoming?language=objc
+		if flags&C.kDNSServiceFlagsMoreComing != C.kDNSServiceFlagsMoreComing &&
+			rrtype == qtype {
+			// When there's a CNAME chain cached, the system will immediately return that,
+			// with kDNSServiceFlagsMoreComing == 0, and return the requested type later,
+			// when the resolver responds. So we need to keep waiting until we
+			// get the right resource type or an error occurs. We still need to check for
+			// kDNSServiceFlagsMoreComing == 0 to make sure we get all responses.
+			// TODO: what if the resolver returns a CNAME chain, but no answer with the right type?
 			defer func() { done <- struct{}{} }()
 		}
 		if errorCode != C.kDNSServiceErr_NoError {
@@ -156,8 +163,9 @@ func queryAnswers(ctx context.Context, qname string, qtype dnsmessage.Type) (*dn
 	cContext := cgo.NewHandle(callback)
 	defer cContext.Delete()
 	log.Println("starting")
-	// See https://developer.apple.com/documentation/dnssd/1804747-dnsservicequeryrecord?language=objc
+	// https://developer.apple.com/documentation/dnssd/1823436-anonymous/kdnsserviceflagsreturnintermediates?language=objc
 	var flags C.DNSServiceFlags = C.kDNSServiceFlagsReturnIntermediates
+	// See https://developer.apple.com/documentation/dnssd/1804747-dnsservicequeryrecord?language=objc
 	serviceErr := C.DNSServiceQueryRecord(&sdRef, flags, 0,
 		cQname, C.uint16_t(qtype), C.uint16_t(dnsmessage.ClassINET),
 		C.DNSServiceQueryRecordReply(C.goDNSServiceQueryRecordReply),
