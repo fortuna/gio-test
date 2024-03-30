@@ -1,5 +1,9 @@
 # gio-test
 
+This is an example application written in Go using Gio UI. It performs DNS resolution and displays the result.
+
+<img width="210" alt="Screenshot 2024-03-28 at 9 41 02 PM" src="https://github.com/amircybersec/gio-test/assets/117060873/a66ae9a3-6b4f-4e97-95f2-6a025866767d">
+<img width="210" alt="Screenshot 2024-03-29 at 1 20 57 PM" src="https://github.com/amircybersec/gio-test/assets/117060873/a9d449e4-8fce-405d-a73d-71f2f9497325">
 
 
 To run the app:
